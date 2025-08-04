@@ -8,13 +8,13 @@ load_dotenv()
 # Get database URL from environment variables
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-
 """Create a table for user message history if it doesn't exist"""
 conn = sqlite3.connect(DATABASE_URL)
 cursor = conn.cursor()
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS chat_history (
-        user_id     TEXT PRIMARY KEY,
+        msg_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     TEXT NOT NULL,
         role        TEXT NOT NULL,
         message     TEXT NOT NULL,
         timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -81,5 +81,5 @@ def clear_all_user_history():
     conn.commit()
     conn.close()
 
-        
+    
         

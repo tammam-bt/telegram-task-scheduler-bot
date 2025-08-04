@@ -6,6 +6,8 @@ import os
 import logging
 from DB import save_user_message, get_user_history, get_all_user_history, clear_user_history
 from Handlers.commands_handlers import start_command, help_command, error_handler, clear_command
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
 
 # Enable logging
 logging.basicConfig(
@@ -33,8 +35,11 @@ def chat_with_gpt(prompt, user_id):
         )
         # Save the user message to the database
         save_user_message(user_id, "user", prompt)
+        print(f"User {user_id} message saved: {prompt}")
         # Save the AI response to the database
         save_user_message(user_id, "assistant", response.choices[0].message.content)
+        print(f"User {user_id} response saved: {response.choices[0].message.content}")
+        # Return the AI response
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Error calling OpenAI API: {e}")
