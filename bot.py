@@ -5,6 +5,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import os
 import logging
 from DB import save_user_message, get_user_history, get_all_user_history, clear_user_history
+from Handlers.commands_handlers import start_command, help_command, error_handler, clear_command
 
 # Enable logging
 logging.basicConfig(
@@ -40,34 +41,6 @@ def chat_with_gpt(prompt, user_id):
         return "Sorry, I'm having trouble processing your request right now."
 
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /start command"""
-    welcome_text = (
-        "🤖 Hello! I'm your AI assistant bot.\n\n"
-        "I can help you with various questions and tasks. "
-        "Just send me a message and I'll respond using AI!\n\n"
-        "Use /help to see available commands."
-    )
-    await update.message.reply_text(welcome_text)
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /help command"""
-    help_text = (
-        "📋 Available Commands:\n\n"
-        "/start - Start the bot and see welcome message\n"
-        "/help - Show this help message\n\n"
-        "💬 How to use:\n"
-        "Simply send me any message and I'll respond using AI!\n\n"
-        "✨ Examples:\n"
-        "• Ask me questions\n"
-        "• Request explanations\n"
-        "• Get creative writing help\n"
-        "• And much more!"
-    )
-    await update.message.reply_text(help_text)
-
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle regular text messages"""
     user_message = update.message.text
@@ -92,15 +65,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Sorry, I encountered an error while processing your message. Please try again."
         )
-
-
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle errors"""
-    logger.error(f"Update {update} caused error {context.error}")
-    context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text="An error occurred while processing your request. Please try again later."
-    )
 
 
 def main():
@@ -133,6 +97,7 @@ def main():
     # Add command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("clear", clear_command))
     
     # Add message handler for text messages
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
