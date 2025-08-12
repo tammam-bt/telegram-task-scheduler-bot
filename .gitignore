@@ -7,3 +7,8 @@ __pycache__/
 *.pyd
 *.db
 API_integration.txt
+test.py
+tokens/
+*.log
+credentials.json
+TODO.txt
