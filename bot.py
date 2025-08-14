@@ -73,7 +73,7 @@ async def handle_AI(update: Update, context: ContextTypes.DEFAULT_TYPE, client=N
         response = await chat_with_gpt(user_message, user_id, client=client, user_history=get_user_history(user_id))
         
         # Send the response
-        await update.message.reply_text(response)
+        await update.message.reply_text(response, parse_mode='Markdown')
         
     except Exception as e:
         logger.error(f"Error handling message: {e}")
