@@ -155,7 +155,7 @@ def delete_event(event_id):
     conn.commit()
     conn.close()
     
-def update_event(event_id, title=None, start_time=None, end_time=None, description=None, location=None):
+def update_event_in_db(event_id, title=None, start_time=None, end_time=None, description=None, location=None):
     """Update an existing event by its ID"""
     conn = sqlite3.connect(DATABASE_URL)
     cursor = conn.cursor()

@@ -3,7 +3,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import os
-from DB import save_created_event, get_created_events, delete_event, update_event, delete_event
+from DB import save_created_event, get_created_events, delete_event, update_event_in_db, delete_event
 import googleapiclient.discovery_cache
 googleapiclient.discovery_cache.DISABLE_FILE_CACHE = True
 
@@ -29,7 +29,7 @@ def authenticate_user(user_id: int):
             flow = InstalledAppFlow.from_client_secrets_file(
                 credentials_path, SCOPES)
             flow.redirect_uri = 'http://localhost:8080/'
-            creds = flow.run_local_server(port=8080, access_type='offline')
+            creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
             with open(token_path, 'w') as token_file:
                 token_file.write(creds.to_json())
     service = build('calendar', 'v3', credentials=creds)
@@ -78,14 +78,19 @@ def create_event(service, event, user_id):
         print(f"An error occurred: {e}")
         return None
     
-def list_events(service, max_results=10):
+def list_events(service, max_results=10, time_min=None, time_max=None):
     """List the next n events from the user's primary calendar."""
     try:
-        events_result = service.events().list(calendarId='primary', maxResults=max_results, singleEvents=True,
-                                             orderBy='startTime').execute()
+        events_result = service.events().list(calendarId='primary', maxResults=max_results, singleEvents=False, timeMin=time_min, timeMax=time_max).execute()
         events = events_result.get('items', [])
         if not events:
             print('No upcoming events found.')
+        events = [{'id': event['id'],
+                   'summary': event.get('summary', 'No Title'),
+                   'description': event.get('description', ''),
+                   'location': event.get('location', ''),
+                   'start': event['start'].get('dateTime', event['start'].get('date')),
+                   'end': event['end'].get('dateTime', event['end'].get('date'))} for event in events]    
         return events
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -104,9 +109,9 @@ def delete_event(service, event_id):
 def update_event(service, event_id, updated_event):
     '''Update an existing event in the user's primary calendar.'''
     try:
-        updated_event = service.events().update(calendarId='primary', eventId=event_id, body=updated_event).execute()
+        updated_event = service.events().patch(calendarId='primary', eventId=event_id, body=updated_event).execute()
         # Also update the event in the database
-        update_event(
+        update_event_in_db(
             event_id=event_id,
             title=updated_event.get('summary'),
             start_time=updated_event['start']['dateTime'],
