@@ -21,7 +21,12 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+# httpx logs every request URL at INFO, and Telegram API URLs contain the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+# Used when OPENROUTER_MODEL is not set.
+DEFAULT_MODEL = "openai/gpt-4.1-mini"
 
 # Global OpenAI client
 client = None
@@ -43,7 +48,7 @@ async def chat_with_gpt(prompt, user_id, client, user_history=None, system_messa
     messages.append({"role": "user", "content": prompt})
     try:
         response = client.chat.completions.create(
-            model=os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3-8b-instruct"),
+            model=os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL),
             messages=messages,
         )
         # Save the user message to the database
