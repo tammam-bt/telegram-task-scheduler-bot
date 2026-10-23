@@ -221,3 +221,28 @@ def test_find_event_does_not_match_a_title_contained_in_the_request(calendar):
     calendar.add("Meeting", at(WED, 10), at(WED, 11))
     calendar.events().list = lambda **kw: type("R", (), {"execute": lambda self: {"items": list(calendar.store.values())}})()
     assert Calendar_API.find_event(calendar, "Meeting with Sarah and team", "Africa/Tunis") is None
+
+
+# --- AI call failure ----------------------------------------------------------
+
+def _say_with(llm, text):
+    import asyncio
+    from types import SimpleNamespace
+    import bot
+    from conftest import FakeMessage, _noop
+    replies = []
+    update = SimpleNamespace(message=FakeMessage(text, replies),
+                             effective_user=SimpleNamespace(id=4242, first_name="Demo"),
+                             effective_chat=SimpleNamespace(id=4242))
+    context = SimpleNamespace(bot=SimpleNamespace(send_chat_action=_noop))
+    asyncio.run(bot.handle_message(update, context, client=llm))
+    return replies
+
+
+def test_failed_ai_call_sends_one_message_and_no_action_parsing(calendar):
+    from conftest import FailingLLM
+    replies = _say_with(FailingLLM(), "Book a dentist appointment on Wednesday at 10")
+    assert len(replies) == 1
+    assert "trouble" in replies[0].lower()
+    assert "couldn't work out" not in replies[0].lower()
+    assert not calendar.store

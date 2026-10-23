@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 # Used when OPENROUTER_MODEL is not set.
 DEFAULT_MODEL = "openai/gpt-4.1-mini"
 
+# Without a cap, OpenRouter reserves the model's whole output budget on every request
+# and rejects it with a 402 when the account balance is lower than that reservation.
+MAX_REPLY_TOKENS = 1024
+
+AI_FAILURE_MESSAGE = "Sorry, I'm having trouble processing your request right now."
+
 # Global OpenAI client
 client = None
 
@@ -51,6 +57,7 @@ async def chat_with_gpt(prompt, user_id, client, user_history=None, system_messa
         response = client.chat.completions.create(
             model=os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL),
             messages=messages,
+            max_tokens=MAX_REPLY_TOKENS,
         )
         # Save the user message to the database
         save_user_message(user_id, "user", prompt)
@@ -62,7 +69,7 @@ async def chat_with_gpt(prompt, user_id, client, user_history=None, system_messa
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Error calling OpenAI API: {e}")
-        return "Sorry, I'm having trouble processing your request right now."
+        return AI_FAILURE_MESSAGE
 
 async def handle_AI(update: Update, context: ContextTypes.DEFAULT_TYPE, client=None):
     """Handle regular text messages"""
@@ -326,6 +333,10 @@ Error
 - For list actions, only include fields that can be determined from the input
 - Ensure all times are local wall-clock times in the YYYY-MM-DDTHH:MM:SS format"""
     response = await chat_with_gpt(user_message, update.effective_user.id, client=client, user_history= get_user_history(user_id), system_message=system_message)
+    if response == AI_FAILURE_MESSAGE:
+        # The AI call itself failed: say so once, and do not try to parse an action out of it
+        await update.message.reply_text(response)
+        return
     response = response.strip().split("```")[1] if "```" in response else response.strip()
     fields = parse_fields(response)
     action = fields.get('Action', '').strip().lower()

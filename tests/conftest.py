@@ -137,9 +137,11 @@ class ScriptedLLM:
     def __init__(self, reply):
         self.reply = reply
         self.system_prompt = None
+        self.calls = []
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
-    def _create(self, model, messages):
+    def _create(self, model, messages, **kwargs):
+        self.calls.append(kwargs)
         self.system_prompt = next((m["content"] for m in messages if m["role"] == "system"), None)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=self.reply))])
 
@@ -181,3 +183,13 @@ def say():
         asyncio.run(bot.handle_message(update, context, client=llm))
         return replies, llm
     return _say
+
+
+class FailingLLM:
+    """OpenAI-compatible client whose every call raises, like a 402 from OpenRouter."""
+
+    def __init__(self):
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def _create(self, **kwargs):
+        raise RuntimeError("402 This request requires more credits")

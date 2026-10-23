@@ -14,7 +14,7 @@ def test_chat_uses_default_model_unless_env_overrides(monkeypatch):
 
     seen = []
 
-    def create(model, messages):
+    def create(model, messages, **kwargs):
         seen.append(model)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
 
@@ -30,3 +30,20 @@ def test_chat_uses_default_model_unless_env_overrides(monkeypatch):
 def test_httpx_does_not_log_request_urls_at_info():
     # Telegram API URLs contain the bot token; httpx logs them at INFO.
     assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+
+
+def test_reply_tokens_are_capped_on_every_completion_call(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    seen = []
+
+    def create(**kwargs):
+        seen.append(kwargs.get("max_tokens"))
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+
+    llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(bot, "save_user_message", lambda *a, **k: None)
+    asyncio.run(bot.chat_with_gpt("hi", 1, llm))
+    assert bot.MAX_REPLY_TOKENS == 1024
+    assert seen == [1024]
