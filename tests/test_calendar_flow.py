@@ -151,3 +151,73 @@ def test_list_shows_local_times(calendar, say):
     text = "\n".join(replies)
     assert "Dentist appointment" in text
     assert "10:00" in text
+
+
+# --- fix round 1: ambiguity, delete bookkeeping, raw block ---------------------
+
+def test_two_exact_matches_are_not_acted_on_and_candidates_are_listed(calendar, say):
+    calendar.add("Dentist", at(WED, 10), at(WED, 11))
+    calendar.add("Dentist", at(FRI, 10), at(FRI, 11))
+    replies, _ = say("Cancel the dentist", block("delete", "Dentist"))
+    assert len(calendar.store) == 2
+    assert "dentist" in last(replies) and WED.strftime("%d") in last(replies) and FRI.strftime("%d") in last(replies)
+    assert "deleted" not in last(replies)
+
+
+def test_several_partial_matches_are_not_acted_on_for_update(calendar, say):
+    calendar.add("Dentist checkup", at(WED, 10), at(WED, 11))
+    calendar.add("Dentist cleaning", at(FRI, 10), at(FRI, 11))
+    before = dict(calendar.store)
+    replies, _ = say("Move my dentist", block("update", "dentist", start=at(FRI, 15).replace(tzinfo=None).isoformat()))
+    assert calendar.store == before
+    assert "dentist checkup" in last(replies) and "dentist cleaning" in last(replies)
+
+
+def test_exact_match_is_preferred_over_partial(calendar, say):
+    calendar.add("Meeting", at(WED, 10), at(WED, 11))
+    calendar.add("Meeting with Sarah", at(FRI, 10), at(FRI, 11))
+    say("Cancel the meeting", block("delete", "Meeting"))
+    assert [e["summary"] for e in calendar.store.values()] == ["Meeting with Sarah"]
+
+
+def test_single_partial_match_is_still_found(calendar, say):
+    calendar.add("Dentist appointment", at(WED, 10), at(WED, 11))
+    say("Cancel the dentist", block("delete", "dentist"))
+    assert not calendar.store
+
+
+def test_a_shorter_event_title_is_not_matched_by_a_longer_request(calendar, say):
+    calendar.add("Meeting", at(WED, 10), at(WED, 11))
+    replies, _ = say("Cancel meeting with Sarah and team", block("delete", "Meeting with Sarah and team"))
+    assert len(calendar.store) == 1
+    assert "no event found" in last(replies)
+
+
+def test_delete_replies_even_if_local_bookkeeping_fails(calendar, say, monkeypatch):
+    calendar.add("Dentist appointment", at(WED, 10), at(WED, 11))
+
+    def boom(event_id):
+        raise RuntimeError("db locked")
+    monkeypatch.setattr(Calendar_API, "delete_event_from_db", boom)
+    replies, _ = say("Cancel the dentist appointment", block("delete", "Dentist appointment"))
+    assert not calendar.store
+    assert "deleted" in last(replies)
+
+
+def test_raw_action_block_is_not_echoed_to_the_user(calendar, say):
+    calendar.add("Dentist appointment", at(WED, 10), at(WED, 11))
+    replies, _ = say("Cancel the dentist appointment", block("delete", "Dentist appointment"))
+    assert len(replies) == 1
+    assert not any("Action:" in r for r in replies)
+
+
+def test_plain_chat_reply_is_still_sent_as_is(calendar, say):
+    replies, _ = say("hello", "Hi! I can manage your calendar.")
+    assert replies[0] == "Hi! I can manage your calendar."
+
+
+def test_find_event_does_not_match_a_title_contained_in_the_request(calendar):
+    # Google's q search is fuzzy, so the service can return "Meeting" for a longer request.
+    calendar.add("Meeting", at(WED, 10), at(WED, 11))
+    calendar.events().list = lambda **kw: type("R", (), {"execute": lambda self: {"items": list(calendar.store.values())}})()
+    assert Calendar_API.find_event(calendar, "Meeting with Sarah and team", "Africa/Tunis") is None

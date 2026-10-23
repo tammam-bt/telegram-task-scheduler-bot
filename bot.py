@@ -6,7 +6,8 @@ import os
 import logging
 from DB import save_user_message, get_user_history, get_all_user_history, clear_user_history
 from Handlers.Calendar_API import (authenticate_user, create_event_dict, create_event, list_events, delete_event,
-                                   update_event, get_calendar_timezone, to_event_time, to_query_bound, find_event)
+                                   update_event, get_calendar_timezone, to_event_time, to_query_bound, find_event,
+                                   AmbiguousEvent)
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from functools import partial
@@ -87,6 +88,24 @@ async def handle_AI(update: Update, context: ContextTypes.DEFAULT_TYPE, client=N
         await update.message.reply_text(
             "Sorry, I encountered an error while processing your message. Please try again."
         )
+
+def ambiguity_message(verb, summary, candidates, tz):
+    """Ask the user to narrow down which event they mean; nothing has been changed."""
+    lines = []
+    for event in candidates[:10]:
+        when = event.get('start', {})
+        raw = when.get('dateTime') or when.get('date') or ''
+        try:
+            parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone(ZoneInfo(tz))
+            raw = parsed.strftime('%a %d %b, %H:%M') if 'dateTime' in when else parsed.strftime('%a %d %b')
+        except ValueError:
+            pass
+        lines.append(f"- {event.get('summary', 'No Title')} ({raw})")
+    return (f"I found {len(candidates)} events that could be \"{summary}\", so I did not {verb} anything:\n"
+            + "\n".join(lines) + "\nTell me which one, for example by its full title or its date.")
+
 
 def parse_fields(response):
     """Turn the model's 'Key: value' block into a dict."""
@@ -308,9 +327,11 @@ Error
 - Ensure all times are local wall-clock times in the YYYY-MM-DDTHH:MM:SS format"""
     response = await chat_with_gpt(user_message, update.effective_user.id, client=client, user_history= get_user_history(user_id), system_message=system_message)
     response = response.strip().split("```")[1] if "```" in response else response.strip()
-    await update.message.reply_text(response)
     fields = parse_fields(response)
     action = fields.get('Action', '').strip().lower()
+    if action not in ('create', 'list', 'update', 'delete'):
+        # Not a calendar action: show the model's reply as it is
+        await update.message.reply_text(response)
     if not service:
         await update.message.reply_text("I couldn't reach your Google Calendar. Use /connect to link it first.")
         return
@@ -352,7 +373,11 @@ Error
         logger.info("Updating event...")
         summary = fields.get('Summary')
         # Find the event by its name, not by its new time: the event is still at its old time
-        existing = find_event(service, summary, tz)
+        try:
+            existing = find_event(service, summary, tz)
+        except AmbiguousEvent as ambiguous:
+            await update.message.reply_text(ambiguity_message("update", summary, ambiguous.candidates, tz))
+            return
         if existing is None:
             await update.message.reply_text(f"No event found to update named \"{summary}\".")
             return
@@ -383,9 +408,13 @@ Error
     elif action == 'delete':
         logger.info("Deleting event...")
         summary = fields.get('Summary')
-        existing = find_event(service, summary, tz,
-                              time_min=to_query_bound(fields.get('Start Time'), tz),
-                              time_max=to_query_bound(fields.get('End Time'), tz))
+        try:
+            existing = find_event(service, summary, tz,
+                                  time_min=to_query_bound(fields.get('Start Time'), tz),
+                                  time_max=to_query_bound(fields.get('End Time'), tz))
+        except AmbiguousEvent as ambiguous:
+            await update.message.reply_text(ambiguity_message("delete", summary, ambiguous.candidates, tz))
+            return
         if existing is None:
             await update.message.reply_text(f"No event found to delete named \"{summary}\".")
             return

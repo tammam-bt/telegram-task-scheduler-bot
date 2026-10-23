@@ -50,12 +50,21 @@ def to_query_bound(value, tz):
     return local.replace(tzinfo=ZoneInfo(tz)).isoformat()
 
 
+class AmbiguousEvent(Exception):
+    """More than one event fits the name; the caller must ask the user which one."""
+    def __init__(self, candidates):
+        super().__init__(f"{len(candidates)} events match")
+        self.candidates = candidates
+
+
 def find_event(service, summary, tz, time_min=None, time_max=None):
     """Find the user's event whose title matches `summary`, ignoring case.
 
     Searches by name rather than by time, so an event can be found when the user only
     says what it is ("move my dentist appointment to Friday"). Without a window it looks
-    from the start of today onwards. Exact title matches win over partial ones."""
+    from the start of today onwards. Exact title matches win over partial ones (the title
+    must contain the request, never the other way round). Returns None when nothing
+    matches and raises AmbiguousEvent when more than one event is equally good a match."""
     if not summary or summary.strip().upper() == 'N/A':
         return None
     wanted = summary.strip().lower()
@@ -71,8 +80,10 @@ def find_event(service, summary, tz, time_min=None, time_max=None):
         return None
     titles = [(event, event.get('summary', '').strip().lower()) for event in items]
     exact = [event for event, title in titles if title == wanted]
-    partial = [event for event, title in titles if wanted in title or (title and title in wanted)]
+    partial = [event for event, title in titles if wanted in title]
     matches = exact or partial
+    if len(matches) > 1:
+        raise AmbiguousEvent(matches)
     return matches[0] if matches else None
 
 
@@ -174,8 +185,11 @@ def delete_event(service, event_id):
     except Exception as e:
         print(f"An error occurred: {e}")
         return False
-    # Also delete the event from the database
-    delete_event_from_db(event_id)
+    # Also delete the event from the database; Google has already deleted it, so a failure here must not hide that
+    try:
+        delete_event_from_db(event_id)
+    except Exception as e:
+        print(f"Event deleted but not removed locally: {e}")
     print(f"Event {event_id} deleted.")
     return True
         
